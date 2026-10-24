@@ -7,7 +7,8 @@ const selfsigned = require('selfsigned');
 const QRCode = require('qrcode');
 const ws = require('./ws');
 
-const PORT = Number(process.env.MOTION_CUES_PORT) || 8443;
+const BASE_PORT = Number(process.env.MOTION_CUES_PORT) || 8443;
+let port = BASE_PORT;
 
 const DEFAULTS = {
   enabled: true,
@@ -130,12 +131,19 @@ function startServer() {
     conn.on('close', () => { phones.delete(conn); sendStatus(); });
   });
 
+  // If the port is taken (another program, or a second copy of this app), move up to the
+  // next free one. The QR code and links always use whichever port we ended up on.
   server.on('error', err => {
+    if (err.code === 'EADDRINUSE' && port < BASE_PORT + 20) {
+      port++;
+      server.listen(port, '0.0.0.0');
+      return;
+    }
     dialog.showErrorBox('Motion Cues', err.code === 'EADDRINUSE'
-      ? `Port ${PORT} is already in use. Close the other copy, or set MOTION_CUES_PORT to another port.`
+      ? `Ports ${BASE_PORT}–${port} are all in use. Close other copies of the app and try again.`
       : String(err));
   });
-  server.listen(PORT, '0.0.0.0');
+  server.listen(port, '0.0.0.0');
 }
 
 function sendStatus() {
@@ -145,7 +153,7 @@ function sendStatus() {
 
 async function connectInfo() {
   const urls = await Promise.all(lanAddresses().filter(a => addressRank(a) < 9).map(async a => {
-    const url = `https://${a.address}:${PORT}/`;
+    const url = `https://${a.address}:${port}/`;
     return { name: a.name, url, qr: await QRCode.toDataURL(url, { margin: 1, width: 220 }) };
   }));
   return { urls, phones: phones.size };
