@@ -1,0 +1,151 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Motion Cues overlay</title>
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let S = null;
+let motion = { f: 0, r: 0, at: -Infinity };
+const st = { x: 0, y: 0, vx: 0, vy: 0, level: 0 };
+let W = 0, H = 0;
+
+function resize() {
+  const dpr = devicePixelRatio || 1;
+  W = innerWidth; H = innerHeight;
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener('resize', resize);
+resize();
+
+mc.on('settings', s => { S = s; });
+mc.on('motion', m => { motion = { ...m, at: performance.now() }; });
+mc.getSettings().then(s => { S = s; requestAnimationFrame(loop); });
+
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+// Light dots get a dark ring and dark dots a light one, so they stay visible on any background.
+function outlineFor(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const lum = (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255;
+  return lum > 0.5 ? '#000' : '#fff';
+}
+
+// One axis of a dot lattice that scrolls by `off` inside [start, start + span).
+// With `fade`, dots fade out as they reach the ends instead of popping; without it the
+// period divides the span exactly, so dots wrap around seamlessly.
+function axis(start, span, period, anchor, off, fade) {
+  const out = [];
+  const first = anchor + off;
+  const kmin = Math.ceil((start - first) / period);
+  const kmax = Math.ceil((start + span - first) / period) - 1;
+  for (let k = kmin; k <= kmax; k++) {
+    const p = first + k * period;
+    out.push([p, fade ? clamp(Math.min(p - start, start + span - p) / fade, 0, 1) : 1]);
+  }
+  return out;
+}
+
+function band(pts, xs, ys) {
+  for (const [x, wx] of xs) for (const [y, wy] of ys) if (wx * wy > 0.01) pts.push([x, y, wx * wy]);
+}
+
+// Dots live in bands along the screen edges and scroll within them, so however hard
+// the car moves they stay on screen.
+function points(ox, oy) {
+  const pts = [];
+  const rows = Math.max(2, S.rows), cols = Math.max(1, S.columns);
+  const gap = Math.max(S.size * 2.2, 22);
+  const sy = H / rows;
+
+  if (S.layout === 'grid') {
+    const across = Math.max(3, Math.round(rows * W / H)), sx = W / across;
+    band(pts, axis(0, W, sx, sx / 2, ox % W, 0), axis(0, H, sy, sy / 2, oy % H, 0));
+    return pts;
+  }
+
+  const depth = 2 * S.inset + (cols - 1) * gap;
+  const fd = Math.max(4, Math.min(gap / 2, S.inset));
+  const ys = axis(0, H, sy, sy / 2, oy % H, 0);
+  band(pts, axis(0, depth, gap, S.inset, ox, fd), ys);
+  band(pts, axis(W - depth, depth, gap, W - depth + S.inset, ox, fd), ys);
+
+  if (S.layout === 'frame') {
+    const left = depth, span = W - 2 * depth;
+    const across = Math.max(2, Math.round(rows * span / H)), sx = span / across;
+    const xs = axis(left, span, sx, left + sx / 2, ox % span, sx / 2);
+    band(pts, xs, axis(0, depth, gap, S.inset, oy, fd));
+    band(pts, xs, axis(H - depth, depth, gap, H - depth + S.inset, oy, fd));
+  }
+  return pts;
+}
+
+let last = performance.now();
+function loop(now) {
+  requestAnimationFrame(loop);
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+
+  // f: forward acceleration (speeding up +), r: sideways acceleration (turning right +), both m/s².
+  let f = 0, r = 0;
+  if (S.demo) {
+    const t = now / 1000;
+    f = 2.2 * Math.sin(t * 0.9);
+    r = 2.8 * Math.sin(t * 0.55 + 1.3);
+  } else if (now - motion.at < 1500) {
+    f = motion.f; r = motion.r;
+  }
+
+  // The dots act like they have inertia: they drift opposite to the car's acceleration,
+  // matching what your inner ear feels. Speeding up pushes them down, braking up, turns sideways.
+  const max = Math.min(W, H) * 0.15;
+  const tx = clamp(-r * S.sensitivity * (S.invertX ? -1 : 1), -max, max);
+  const ty = clamp(f * S.sensitivity * (S.invertY ? -1 : 1), -max, max);
+  const k = 20 + S.responsiveness * 1.6, c = 2 * Math.sqrt(k) * 0.9;
+  st.vx += (k * (tx - st.x) - c * st.vx) * dt; st.x += st.vx * dt;
+  st.vy += (k * (ty - st.y) - c * st.vy) * dt; st.y += st.vy * dt;
+  st.level += (Math.hypot(f, r) - st.level) * Math.min(1, dt * 3);
+
+  let alpha = S.opacity;
+  if (S.fadeWhenStill) alpha *= clamp((st.level - 0.2) / 0.6, 0, 1);
+
+  ctx.clearRect(0, 0, W, H);
+  if (!S.enabled || alpha < 0.01) return;
+
+  // Batch dots by fade level so each level is one stroke and one fill.
+  const rad = S.size / 2;
+  const levels = new Map();
+  for (const [x, y, w] of points(st.x, st.y)) {
+    const q = Math.round(w * 8);
+    if (!levels.has(q)) levels.set(q, new Path2D());
+    const path = levels.get(q);
+    path.moveTo(x + rad, y);
+    path.arc(x, y, rad, 0, Math.PI * 2);
+  }
+
+  ctx.strokeStyle = outlineFor(S.color);
+  ctx.lineWidth = 2 * Math.max(1, rad * 0.6 * S.contrast / 100);
+  ctx.fillStyle = S.color;
+  for (const [q, path] of levels) {
+    const a = alpha * q / 8;
+    if (S.contrast > 0) {
+      ctx.globalAlpha = a * Math.min(1, 0.25 + S.contrast / 100);
+      ctx.stroke(path);
+    }
+    ctx.globalAlpha = a;
+    ctx.fill(path);
+  }
+}
+</script>
+</body>
+</html>

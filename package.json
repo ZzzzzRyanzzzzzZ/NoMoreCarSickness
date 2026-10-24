@@ -1,0 +1,20 @@
+{
+  "name": "motion-cues",
+  "version": "1.0.0",
+  "description": "Car-sickness motion cue dots over your whole screen, driven by your iPhone's motion sensor.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^33.4.11"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4",
+    "selfsigned": "^2.4.1"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
+}

@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Motion Cues sensor</title>
+<style>
+  :root { color-scheme: dark; --bg:#0f1114; --card:#1a1d22; --line:#2a2e35; --text:#eef0f3; --dim:#9aa1ab; --accent:#4da3ff; --ok:#3ecf8e; --warn:#f5b84b; --bad:#ff6b6b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.4 -apple-system, system-ui, sans-serif;
+         padding: max(20px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); }
+  h1 { font-size: 24px; margin: 4px 0 4px; }
+  p { color: var(--dim); margin: 0 0 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-bottom: 14px; }
+  button { width: 100%; border: 0; border-radius: 14px; padding: 16px; font: 600 18px/1 inherit; font-family: inherit; color: #fff; background: var(--accent); }
+  button.secondary { background: #2a2e35; font-size: 16px; padding: 13px; }
+  select { width: 100%; font: inherit; color: var(--text); background: #23272d; border: 1px solid var(--line); border-radius: 10px; padding: 11px; }
+  label { display: block; font-size: 14px; color: var(--dim); margin-bottom: 6px; }
+  .status { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--bad); flex: none; }
+  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); }
+  .meter { display: grid; grid-template-columns: 74px 1fr 56px; align-items: center; gap: 10px; font-size: 14px; margin-top: 10px; }
+  .bar { position: relative; height: 10px; background: #23272d; border-radius: 5px; overflow: hidden; }
+  .bar i { position: absolute; top: 0; bottom: 0; left: 50%; background: var(--accent); }
+  .bar::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--dim); }
+  .num { text-align: right; font-variant-numeric: tabular-nums; color: var(--dim); }
+  .hint { font-size: 14px; color: var(--dim); margin-top: 10px; }
+  .row { display: flex; gap: 10px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+  <h1>Motion Cues</h1>
+  <p>This phone is the motion sensor for the dots on your laptop.</p>
+
+  <div class="card">
+    <label for="mount">How is the phone sitting?</label>
+    <select id="mount">
+      <option value="top">Lying flat, top edge pointing to the front of the car</option>
+      <option value="back">Upright in a mount, screen facing you</option>
+      <option value="bottom">Lying flat, top edge pointing to the back</option>
+      <option value="screen">Upright, screen facing the front of the car</option>
+    </select>
+    <div class="hint">Put it somewhere it won't slide around: a mount, a cup holder or flat on the seat.</div>
+  </div>
+
+  <div class="card" id="startCard">
+    <button id="start">Start sending motion</button>
+    <div class="hint" id="startHint">Tap to allow motion access. Keep this page open; the screen stays awake.</div>
+  </div>
+
+  <div class="card" id="liveCard" hidden>
+    <div class="status"><span class="dot" id="connDot"></span><span id="connText">Connecting…</span></div>
+    <div class="meter"><span>Forward</span><div class="bar"><i id="fBar"></i></div><span class="num" id="fNum">0.00</span></div>
+    <div class="meter"><span>Sideways</span><div class="bar"><i id="rBar"></i></div><span class="num" id="rNum">0.00</span></div>
+    <div class="hint" id="orientWarn" hidden>The phone's position doesn't match the option above. Pick the one that matches how it's sitting.</div>
+    <div class="row" style="margin-top:14px">
+      <button class="secondary" id="zero">Zero (while the car is still)</button>
+    </div>
+  </div>
+
+<script>
+const $ = id => document.getElementById(id);
+const AXES = { top: [0, 1, 0], bottom: [0, -1, 0], back: [0, 0, -1], screen: [0, 0, 1] };
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const len = a => Math.sqrt(dot(a, a));
+const scale = (a, s) => a.map(v => v * s);
+const sub = (a, b) => a.map((v, i) => v - b[i]);
+const norm = a => scale(a, 1 / (len(a) || 1));
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+
+const mount = $('mount');
+try { mount.value = localStorage.getItem('mount') || 'top'; } catch {}
+mount.onchange = () => { try { localStorage.setItem('mount', mount.value); } catch {} };
+
+let sock = null, gLow = null, lastSend = 0, lastPaint = 0;
+const sm = { f: 0, r: 0 };
+let bias = { f: 0, r: 0 };
+let zeroing = null;
+
+function setConn(state, text) {
+  $('connDot').className = 'dot ' + (state === 'ok' ? 'ok' : state === 'warn' ? 'warn' : '');
+  $('connText').textContent = text;
+}
+
+function connect() {
+  sock = new WebSocket(`wss://${location.host}/ws`);
+  sock.onopen = () => setConn('ok', 'Connected to laptop');
+  sock.onclose = () => { setConn('bad', 'Disconnected — retrying…'); setTimeout(connect, 1000); };
+  sock.onerror = () => sock.close();
+}
+
+function onMotion(e) {
+  const ag = e.accelerationIncludingGravity;
+  if (!ag || ag.x == null) return;
+  const raw = [ag.x, ag.y, ag.z];
+
+  // Slow average of the total reading = which way is up. Subtracting it leaves the car's own motion.
+  gLow = gLow ? gLow.map((v, i) => v + (raw[i] - v) * 0.03) : raw;
+  const lin = e.acceleration && e.acceleration.x != null
+    ? [e.acceleration.x, e.acceleration.y, e.acceleration.z]
+    : sub(raw, gLow);
+
+  // Flatten the chosen phone axis onto the horizontal plane to get "forward" in the car.
+  const up = norm(gLow);
+  const axis = AXES[mount.value];
+  const flat = sub(axis, scale(up, dot(axis, up)));
+  const mismatch = len(flat) < 0.4;
+  $('orientWarn').hidden = !mismatch;
+  if (mismatch) return;
+  const fwd = norm(flat);
+  const right = cross(fwd, up);
+
+  sm.f += (dot(lin, fwd) - sm.f) * 0.2;
+  sm.r += (dot(lin, right) - sm.r) * 0.2;
+
+  if (zeroing) {
+    zeroing.f += sm.f; zeroing.r += sm.r; zeroing.n++;
+    if (performance.now() > zeroing.until) {
+      bias = { f: zeroing.f / zeroing.n, r: zeroing.r / zeroing.n };
+      zeroing = null;
+      $('zero').textContent = 'Zero (while the car is still)';
+    }
+  }
+
+  const f = sm.f - bias.f, r = sm.r - bias.r;
+  const now = performance.now();
+  if (now - lastSend > 33 && sock && sock.readyState === 1) {
+    sock.send(JSON.stringify({ t: 'm', f: +f.toFixed(3), r: +r.toFixed(3) }));
+    lastSend = now;
+  }
+  if (now - lastPaint > 80) {
+    paint('f', f); paint('r', r);
+    lastPaint = now;
+  }
+}
+
+function paint(k, v) {
+  const pct = Math.max(-50, Math.min(50, v / 4 * 50));
+  const bar = $(k + 'Bar');
+  bar.style.left = (pct < 0 ? 50 + pct : 50) + '%';
+  bar.style.width = Math.abs(pct) + '%';
+  $(k + 'Num').textContent = v.toFixed(2);
+}
+
+let wakeLock = null;
+async function keepAwake() {
+  try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch {}
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && $('startCard').hidden) keepAwake();
+});
+
+$('start').onclick = async () => {
+  try {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+      const p = await DeviceMotionEvent.requestPermission();
+      if (p !== 'granted') throw new Error('denied');
+    }
+  } catch {
+    $('startHint').textContent = 'Motion access was blocked. Close this tab, reopen the link, and tap Allow.';
+    return;
+  }
+  addEventListener('devicemotion', onMotion);
+  keepAwake();
+  connect();
+  $('startCard').hidden = true;
+  $('liveCard').hidden = false;
+};
+
+$('zero').onclick = () => {
+  zeroing = { f: 0, r: 0, n: 0, until: performance.now() + 2000 };
+  $('zero').textContent = 'Hold still…';
+};
+</script>
+</body>
+</html>

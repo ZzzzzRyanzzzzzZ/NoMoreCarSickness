@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
+<title>Motion Cues</title>
+<style>
+  :root { color-scheme: dark; --bg:#14161a; --card:#1c1f24; --line:#2b2f36; --text:#eceef1; --dim:#98a0aa; --accent:#4da3ff; --ok:#3ecf8e; --bad:#ff6b6b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 "Segoe UI", system-ui, sans-serif; padding: 18px 16px 28px; }
+  h1 { font-size: 20px; margin: 0 0 2px; }
+  .sub { color: var(--dim); margin: 0 0 16px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 14px 6px; margin-bottom: 12px; }
+  h2 { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); margin: 0 0 10px; font-weight: 600; }
+  .row { display: grid; grid-template-columns: 118px 1fr 52px; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .row output { text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .rgb input[data-c="r"] { accent-color: #ff5a5a; } .rgb input[data-c="g"] { accent-color: #3ecf6e; } .rgb input[data-c="b"] { accent-color: #4d8bff; }
+  .toggle { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; gap: 10px; }
+  .toggle small { display: block; color: var(--dim); }
+  input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
+  select { font: inherit; color: var(--text); background: #252930; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; width: 100%; }
+  .color-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  input[type=color] { width: 44px; height: 34px; border: 1px solid var(--line); border-radius: 8px; background: none; padding: 2px; cursor: pointer; }
+  #hex { font: inherit; width: 90px; color: var(--text); background: #252930; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; text-transform: uppercase; }
+  .swatches { display: flex; gap: 6px; flex-wrap: wrap; }
+  .swatches button { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--line); cursor: pointer; padding: 0; }
+  .preview { height: 64px; border-radius: 8px; margin: 2px 0 12px; display: flex; overflow: hidden; border: 1px solid var(--line); }
+  .preview div { flex: 1; display: flex; align-items: center; justify-content: center; }
+  .preview canvas { display: block; }
+  .connect { display: grid; grid-template-columns: 120px 1fr; gap: 14px; align-items: start; }
+  .connect img { width: 120px; height: 120px; border-radius: 8px; background: #fff; }
+  .status { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 6px; }
+  .led { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); }
+  .led.ok { background: var(--ok); }
+  .url { font-family: Consolas, monospace; user-select: all; word-break: break-all; color: var(--accent); }
+  .muted { color: var(--dim); font-size: 12.5px; }
+  .live { display: grid; grid-template-columns: 64px 1fr; gap: 6px 10px; align-items: center; margin: 10px 0 8px; font-size: 12.5px; color: var(--dim); }
+  .bar { position: relative; height: 8px; background: #252930; border-radius: 4px; overflow: hidden; }
+  .bar i { position: absolute; top: 0; bottom: 0; left: 50%; background: var(--accent); }
+  .bar::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--dim); }
+  .actions { display: flex; gap: 8px; }
+  .actions button { flex: 1; font: inherit; color: var(--text); background: #252930; border: 1px solid var(--line); border-radius: 8px; padding: 9px; cursor: pointer; }
+  .actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  details summary { cursor: pointer; color: var(--dim); margin: 2px 0 10px; }
+  ol { margin: 6px 0 10px; padding-left: 18px; color: var(--dim); font-size: 12.5px; }
+</style>
+</head>
+<body>
+  <h1>Motion Cues</h1>
+  <p class="sub">Dots on the edges of your screen that move with the car, so your eyes and inner ear agree.</p>
+
+  <section>
+    <h2>Phone sensor</h2>
+    <div class="connect">
+      <img id="qr" alt="QR code for the phone link">
+      <div>
+        <div class="status"><span class="led" id="led"></span><span id="statusText">Waiting for phone</span></div>
+        <div class="muted">Scan with your iPhone camera, or type:</div>
+        <div id="urls"></div>
+      </div>
+    </div>
+    <div class="live">
+      <span>Forward</span><div class="bar"><i id="fBar"></i></div>
+      <span>Sideways</span><div class="bar"><i id="rBar"></i></div>
+    </div>
+    <details>
+      <summary>First-time setup</summary>
+      <ol>
+        <li>Put the laptop and iPhone on the same network. Turning on the iPhone's Personal Hotspot and joining it from the laptop works in the car.</li>
+        <li>Open the link in <b>Safari</b>. It warns that the connection isn't private (the certificate is made on this laptop): tap <b>Show Details → visit this website</b>.</li>
+        <li>Tap <b>Start sending motion</b> and allow motion access.</li>
+        <li>If Windows asks, allow Motion Cues on <b>private and public</b> networks.</li>
+      </ol>
+    </details>
+  </section>
+
+  <section>
+    <h2>Dots</h2>
+    <div class="preview" id="preview">
+      <div style="background:#ffffff"></div><div style="background:#8a8f98"></div><div style="background:#1e1e1e"></div><div style="background:linear-gradient(135deg,#2a6df4,#f45b2a)"></div>
+    </div>
+    <label class="row"><span>Size</span><input type="range" min="4" max="48" step="1" data-key="size"><output></output></label>
+
+    <div class="color-head">
+      <input type="color" id="picker" data-key="color" aria-label="Dot color">
+      <input id="hex" maxlength="7" spellcheck="false" aria-label="Hex color">
+      <div class="swatches" id="swatches"></div>
+    </div>
+    <div class="rgb">
+      <label class="row"><span>Red</span><input type="range" min="0" max="255" data-c="r"><output></output></label>
+      <label class="row"><span>Green</span><input type="range" min="0" max="255" data-c="g"><output></output></label>
+      <label class="row"><span>Blue</span><input type="range" min="0" max="255" data-c="b"><output></output></label>
+    </div>
+    <label class="row"><span>Opacity</span><input type="range" min="0.1" max="1" step="0.05" data-key="opacity" data-fmt="pct"><output></output></label>
+    <label class="row"><span>Contrast ring</span><input type="range" min="0" max="100" step="5" data-key="contrast" data-fmt="pct100"><output></output></label>
+  </section>
+
+  <section>
+    <h2>Layout</h2>
+    <label class="row"><span>Pattern</span>
+      <select data-key="layout">
+        <option value="edges">Left &amp; right edges</option>
+        <option value="frame">All four edges</option>
+        <option value="grid">Whole screen (sparse)</option>
+      </select><span></span>
+    </label>
+    <label class="row"><span>Dots per edge</span><input type="range" min="3" max="24" step="1" data-key="rows"><output></output></label>
+    <label class="row"><span>Columns</span><input type="range" min="1" max="4" step="1" data-key="columns"><output></output></label>
+    <label class="row"><span>Edge distance</span><input type="range" min="0" max="160" step="2" data-key="inset" data-fmt="px"><output></output></label>
+  </section>
+
+  <section>
+    <h2>Motion</h2>
+    <label class="row"><span>Sensitivity</span><input type="range" min="5" max="80" step="1" data-key="sensitivity"><output></output></label>
+    <label class="row"><span>Responsiveness</span><input type="range" min="0" max="100" step="5" data-key="responsiveness"><output></output></label>
+    <label class="toggle"><span>Fade out when the car is steady<small>Dots only appear while speeding up, braking or turning.</small></span><input type="checkbox" data-key="fadeWhenStill"></label>
+    <label class="toggle"><span>Flip left / right<small>Use if dots go the wrong way in turns.</small></span><input type="checkbox" data-key="invertX"></label>
+    <label class="toggle"><span>Flip up / down<small>Use if dots go the wrong way when braking.</small></span><input type="checkbox" data-key="invertY"></label>
+    <label class="toggle"><span>Demo motion<small>Fake a drive so you can tune the look without the phone.</small></span><input type="checkbox" data-key="demo"></label>
+  </section>
+
+  <section style="padding-bottom:14px">
+    <label class="toggle"><span><b>Show dots</b><small>Shortcut: Ctrl+Alt+M. Closing this window keeps the app in the tray.</small></span><input type="checkbox" data-key="enabled"></label>
+    <div class="actions">
+      <button id="reset">Reset to defaults</button>
+    </div>
+  </section>
+
+<script>
+const SWATCHES = ['#4da3ff', '#ffffff', '#000000', '#3ecf8e', '#ffd23f', '#ff5a5a', '#c77dff', '#ff9f1c'];
+let S = null;
+
+const toHex = (r, g, b) => '#' + [r, g, b].map(v => Number(v).toString(16).padStart(2, '0')).join('');
+const fromHex = h => { const n = parseInt(h.slice(1), 16); return { r: n >> 16, g: (n >> 8) & 255, b: n & 255 }; };
+const fmt = (el, v) => ({ pct: Math.round(v * 100) + '%', pct100: v + '%', px: v + 'px' }[el.dataset.fmt] ?? v);
+
+function render() {
+  for (const el of document.querySelectorAll('[data-key]')) {
+    const v = S[el.dataset.key];
+    if (el.type === 'checkbox') el.checked = !!v; else el.value = v;
+    const out = el.parentElement.querySelector('output');
+    if (out) out.textContent = fmt(el, v);
+  }
+  const rgb = fromHex(S.color);
+  for (const el of document.querySelectorAll('[data-c]')) {
+    el.value = rgb[el.dataset.c];
+    el.parentElement.querySelector('output').textContent = rgb[el.dataset.c];
+  }
+  if (document.activeElement !== hex) hex.value = S.color.toUpperCase();
+  drawPreview();
+}
+
+function set(patch) {
+  S = { ...S, ...patch };
+  render();
+  mc.setSettings(patch);
+}
+
+for (const el of document.querySelectorAll('[data-key]')) {
+  el.addEventListener('input', () => {
+    const k = el.dataset.key;
+    set({ [k]: el.type === 'checkbox' ? el.checked : el.type === 'range' ? Number(el.value) : el.value });
+  });
+}
+for (const el of document.querySelectorAll('[data-c]')) {
+  el.addEventListener('input', () => {
+    const rgb = fromHex(S.color);
+    rgb[el.dataset.c] = Number(el.value);
+    set({ color: toHex(rgb.r, rgb.g, rgb.b) });
+  });
+}
+const hex = document.getElementById('hex');
+hex.addEventListener('input', () => {
+  const v = hex.value.trim().replace(/^#?/, '#');
+  if (/^#[0-9a-f]{6}$/i.test(v)) set({ color: v.toLowerCase() });
+});
+hex.addEventListener('blur', render);
+
+const sw = document.getElementById('swatches');
+for (const c of SWATCHES) {
+  const b = document.createElement('button');
+  b.style.background = c;
+  b.title = c;
+  b.onclick = () => set({ color: c });
+  sw.appendChild(b);
+}
+document.getElementById('reset').onclick = () => mc.reset();
+
+// A dot drawn the same way the overlay draws it, over light, mid, dark and busy backgrounds.
+function drawPreview() {
+  const n = parseInt(S.color.slice(1), 16);
+  const lum = (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255;
+  const rad = Math.min(S.size / 2, 26);
+  for (const cell of document.querySelectorAll('#preview div')) {
+    let c = cell.querySelector('canvas');
+    if (!c) { c = document.createElement('canvas'); cell.appendChild(c); }
+    const dpr = devicePixelRatio || 1, w = 60, h = 60;
+    c.width = w * dpr; c.height = h * dpr; c.style.width = w + 'px'; c.style.height = h + 'px';
+    const ctx = c.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.beginPath(); ctx.arc(w / 2, h / 2, rad, 0, Math.PI * 2);
+    if (S.contrast > 0) {
+      ctx.globalAlpha = S.opacity * Math.min(1, 0.25 + S.contrast / 100);
+      ctx.strokeStyle = lum > 0.5 ? '#000' : '#fff';
+      ctx.lineWidth = 2 * Math.max(1, rad * 0.6 * S.contrast / 100);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = S.opacity;
+    ctx.fillStyle = S.color;
+    ctx.fill();
+  }
+}
+
+function setStatus(phones) {
+  document.getElementById('led').className = 'led' + (phones ? ' ok' : '');
+  document.getElementById('statusText').textContent = phones ? 'Phone connected' : 'Waiting for phone';
+}
+
+function paintBar(id, v) {
+  const pct = Math.max(-50, Math.min(50, v / 4 * 50));
+  const bar = document.getElementById(id);
+  bar.style.left = (pct < 0 ? 50 + pct : 50) + '%';
+  bar.style.width = Math.abs(pct) + '%';
+}
+
+let lastMotion = 0;
+mc.on('motion', m => {
+  const now = performance.now();
+  if (now - lastMotion < 60) return;
+  lastMotion = now;
+  paintBar('fBar', m.f);
+  paintBar('rBar', m.r);
+});
+mc.on('status', s => setStatus(s.phones));
+mc.on('settings', s => { S = s; render(); });
+
+mc.getSettings().then(s => { S = s; render(); });
+mc.connectInfo().then(info => {
+  const qr = document.getElementById('qr');
+  if (info.qr) qr.src = info.qr; else qr.style.visibility = 'hidden';
+  document.getElementById('urls').innerHTML = info.urls.length
+    ? info.urls.map(u => `<div class="url">${u.url}</div><div class="muted">${u.name}</div>`).join('')
+    : '<div class="muted">No network found. Join Wi-Fi or your phone\'s hotspot, then restart.</div>';
+  setStatus(info.phones);
+});
+</script>
+</body>
+</html>
