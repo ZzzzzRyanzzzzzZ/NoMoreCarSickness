@@ -1,14 +1,16 @@
 {
-  "name": "motion-cues",
+  "name": "no-more-car-sickness",
   "version": "1.0.0",
   "description": "Car-sickness motion cue dots over your whole screen, driven by your iPhone's motion sensor.",
   "main": "main.js",
   "private": true,
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder --win portable --publish never"
   },
   "devDependencies": {
-    "electron": "^33.4.11"
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
   },
   "dependencies": {
     "qrcode": "^1.5.4",
@@ -16,5 +18,26 @@
   },
   "allowScripts": {
     "electron@33.4.11": true
+  },
+  "productName": "NoMoreCarSickness",
+  "author": "ZzzzzRyanzzzzzZ",
+  "build": {
+    "appId": "com.zzzzzryanzzzzzz.nomorecarsickness",
+    "productName": "NoMoreCarSickness",
+    "files": [
+      "main.js",
+      "preload.js",
+      "ws.js",
+      "overlay.html",
+      "settings.html",
+      "phone.html",
+      "package.json"
+    ],
+    "win": {
+      "target": "portable"
+    },
+    "portable": {
+      "artifactName": "NoMoreCarSickness.exe"
+    }
   }
 }

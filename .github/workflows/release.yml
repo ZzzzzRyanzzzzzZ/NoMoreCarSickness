@@ -1,0 +1,40 @@
+# Builds NoMoreCarSickness.exe on every push to main and publishes it as a new
+# release, so the latest version is always on the repo's Releases page.
+name: Build Windows app
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: NoMoreCarSickness 1.0.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          files: dist/NoMoreCarSickness.exe
+          body: |
+            Download **NoMoreCarSickness.exe** below and double-click it. No install needed.
+
+            Windows may say it "protected your PC" because the app isn't code-signed.
+            Click **More info → Run anyway**.
+
+            Built from ${{ github.sha }}.

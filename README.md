@@ -7,14 +7,25 @@ car move). Motion Cues puts dots along the edges of your screen that drift with 
 braking and turns, so your eyes get the same motion signal. The dots sit on top of every app and ignore the
 mouse, so you keep working as normal.
 
-## Run it
+## Get it
+
+Download **NoMoreCarSickness.exe** from the
+[latest release](https://github.com/ZzzzzRyanzzzzzZ/NoMoreCarSickness/releases/latest) and double-click it.
+There's nothing to install. Windows may say it "protected your PC" because the app isn't code-signed: click
+**More info → Run anyway**. The first start takes a few seconds while it makes its HTTPS certificate.
+
+A settings window opens and a blue dot appears in the system tray.
+
+Every push to `main` builds a fresh .exe with GitHub Actions and publishes it as a new release.
+
+### Run from source
 
 ```bash
 npm install
 npm start
 ```
 
-A settings window opens and a blue dot appears in the system tray.
+`npm run dist` builds the .exe locally into `dist/`.
 
 ## Connect the iPhone
 
