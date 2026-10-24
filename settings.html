@@ -33,7 +33,10 @@
   .status { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 6px; }
   .led { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); }
   .led.ok { background: var(--ok); }
-  .url { font-family: Consolas, monospace; user-select: all; word-break: break-all; color: var(--accent); }
+  .addr { display: block; width: 100%; text-align: left; font: inherit; background: none; border: 1px solid transparent; border-radius: 8px; padding: 5px 7px; margin: 2px -8px; cursor: pointer; color: inherit; }
+  .addr:hover { background: #252930; }
+  .addr.active { border-color: var(--accent); background: #1f2a38; }
+  .url { font-family: Consolas, monospace; word-break: break-all; color: var(--accent); }
   .muted { color: var(--dim); font-size: 12.5px; }
   .live { display: grid; grid-template-columns: 64px 1fr; gap: 6px 10px; align-items: center; margin: 10px 0 8px; font-size: 12.5px; color: var(--dim); }
   .bar { position: relative; height: 8px; background: #252930; border-radius: 4px; overflow: hidden; }
@@ -56,7 +59,7 @@
       <img id="qr" alt="QR code for the phone link">
       <div>
         <div class="status"><span class="led" id="led"></span><span id="statusText">Waiting for phone</span></div>
-        <div class="muted">Scan with your iPhone camera, or type:</div>
+        <div class="muted">Scan with your iPhone camera. If it won't load, click another address:</div>
         <div id="urls"></div>
       </div>
     </div>
@@ -236,14 +239,43 @@ mc.on('status', s => setStatus(s.phones));
 mc.on('settings', s => { S = s; render(); });
 
 mc.getSettings().then(s => { S = s; render(); });
-mc.connectInfo().then(info => {
-  const qr = document.getElementById('qr');
-  if (info.qr) qr.src = info.qr; else qr.style.visibility = 'hidden';
-  document.getElementById('urls').innerHTML = info.urls.length
-    ? info.urls.map(u => `<div class="url">${u.url}</div><div class="muted">${u.name}</div>`).join('')
-    : '<div class="muted">No network found. Join Wi-Fi or your phone\'s hotspot, then restart.</div>';
+// The QR shows the best-guess address; click another one if the phone can't load it.
+// Re-checked every few seconds so joining the hotspot after launch still works.
+let chosenUrl = null, lastList = '';
+async function refreshConnect() {
+  const info = await mc.connectInfo();
   setStatus(info.phones);
-});
+  const list = JSON.stringify(info.urls.map(u => u.url));
+  if (list === lastList) return;
+  lastList = list;
+
+  const qr = document.getElementById('qr');
+  const box = document.getElementById('urls');
+  if (!info.urls.length) {
+    qr.style.visibility = 'hidden';
+    box.innerHTML = '<div class="muted">No network found. Join Wi-Fi or your phone\'s hotspot.</div>';
+    return;
+  }
+  if (!info.urls.some(u => u.url === chosenUrl)) chosenUrl = info.urls[0].url;
+  const show = () => {
+    const u = info.urls.find(u => u.url === chosenUrl);
+    qr.src = u.qr;
+    qr.style.visibility = 'visible';
+    for (const b of box.children) b.classList.toggle('active', b.dataset.url === chosenUrl);
+  };
+  box.innerHTML = '';
+  for (const u of info.urls) {
+    const b = document.createElement('button');
+    b.className = 'addr';
+    b.dataset.url = u.url;
+    b.innerHTML = `<div class="url">${u.url}</div><div class="muted">${u.name}</div>`;
+    b.onclick = () => { chosenUrl = u.url; show(); };
+    box.appendChild(b);
+  }
+  show();
+}
+refreshConnect();
+setInterval(refreshConnect, 4000);
 </script>
 </body>
 </html>

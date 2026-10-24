@@ -62,13 +62,22 @@ function updateSettings(patch) {
 
 // --- Phone connection -------------------------------------------------------
 
+// Best guess first, since the QR code uses it: the iPhone hotspot, then real Wi-Fi or
+// Ethernet. VPNs (Cloudflare WARP etc.) and virtual adapters aren't reachable from the phone.
+function addressRank({ name, address }) {
+  if (address.startsWith('169.254.')) return 9;
+  if (/warp|cloudflare|vpn|tailscale|zerotier|wireguard|nordlynx|tun|tap|vethernet|virtual|vmware|vbox|hyper-v|wsl|docker|loopback|bluetooth/i.test(name)) return 5;
+  if (address.startsWith('172.20.10.')) return 0;
+  if (/wi-?fi|wlan|wireless|ethernet/i.test(name)) return 1;
+  return 3;
+}
+
 function lanAddresses() {
-  const virtual = /vethernet|virtual|vmware|vbox|hyper-v|wsl|docker|loopback|bluetooth/i;
   const out = [];
   for (const [name, list] of Object.entries(os.networkInterfaces())) {
     for (const a of list || []) if (a.family === 'IPv4' && !a.internal) out.push({ name, address: a.address });
   }
-  return out.sort((a, b) => virtual.test(a.name) - virtual.test(b.name));
+  return out.sort((a, b) => addressRank(a) - addressRank(b));
 }
 
 // iOS needs HTTPS before Safari will hand over motion data, so we make a
@@ -135,9 +144,11 @@ function sendStatus() {
 }
 
 async function connectInfo() {
-  const urls = lanAddresses().map(a => ({ name: a.name, url: `https://${a.address}:${PORT}/` }));
-  const qr = urls.length ? await QRCode.toDataURL(urls[0].url, { margin: 1, width: 220 }) : null;
-  return { urls, qr, phones: phones.size };
+  const urls = await Promise.all(lanAddresses().filter(a => addressRank(a) < 9).map(async a => {
+    const url = `https://${a.address}:${PORT}/`;
+    return { name: a.name, url, qr: await QRCode.toDataURL(url, { margin: 1, width: 220 }) };
+  }));
+  return { urls, phones: phones.size };
 }
 
 // --- Windows ----------------------------------------------------------------
